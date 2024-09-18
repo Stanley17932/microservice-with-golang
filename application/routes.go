@@ -15,4 +15,5 @@ func loadRoutes() *chi.Mux {
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 
 	})
+	return router
 }

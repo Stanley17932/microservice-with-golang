@@ -1,4 +1,4 @@
-module github.com/Stanley17932/microservice-with-golang.git
+module github.com/Stanley17932/microservice-with-golang
 
 go 1.23.1
 
