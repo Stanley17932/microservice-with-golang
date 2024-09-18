@@ -17,5 +17,15 @@ func main() {
 }
 
 func basicHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		// Handle Get
+		if r.URL.Path == "/foo" {
+			// Handle get foo
+		}
+	}
+	if r.Method == http.MethodPost {
+		// Handle Post
+	}
+
 	w.Write([]byte("Hello, World!"))
 }
