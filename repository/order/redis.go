@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/Stanley17932/microservice-with-golang/model"
 	"github.com/redis/go-redis/v9"
@@ -30,16 +29,16 @@ func (r *RedisRepo) Insert(ctx context.Context, order model.Order) error {
 
 	txn := r.Client.TxPipeline()
 
-	res := r.Client.SetNX(ctx, key, string(data), 0)
+	res := txn.SetNX(ctx, key, string(data), 0)
 	if err := res.Err(); err != nil {
 		txn.Discard()
 		return fmt.Errorf("failed to set: %m", err)
 	}
-	if err := r.Client.SAdd(ctx, "orders", key).Err(); err != nil{
+	if err := r.Client.SAdd(ctx, "orders", key).Err(); err != nil {
 		txn.Discard()
 		return fmt.Errorf("failed to add to orders set: %w", err)
 	}
-	if _, err := txn.Exec(ctx); err != nil{
+	if _, err := txn.Exec(ctx); err != nil {
 		return fmt.Errorf("failed to exec: %w", err)
 	}
 	return nil
@@ -65,12 +64,14 @@ func (r *RedisRepo) FindByID(ctx context.Context, id uint64) (model.Order, error
 	return order, nil
 }
 
+///////////////////////////////////////////////////////////////
+
 func (r *RedisRepo) DeleteByID(ctx context.Context, id uint64) error {
 	key := orderIDKey(id)
 
-	txn := r.Client.Del(ctx, key).Err()
+	txn := r.Client.TxPipeline()
 
-	err := r.Client.Del(ctx, key).Err()
+	err := txn.Del(ctx, key).Err()
 	if errors.Is(err, redis.Nil) {
 		txn.Discard()
 		return ErrNotExist
@@ -79,7 +80,7 @@ func (r *RedisRepo) DeleteByID(ctx context.Context, id uint64) error {
 		return fmt.Errorf("get order:%m", err)
 	}
 
-	if err := txn.SRem(ctx, "orders", key).Err(); err != nil{
+	if err := txn.SRem(ctx, "orders", key).Err(); err != nil {
 		txn.Discard()
 		return fmt.Errorf("failed to remvoe from orders set: %m", err)
 	}
@@ -88,6 +89,8 @@ func (r *RedisRepo) DeleteByID(ctx context.Context, id uint64) error {
 	}
 	return nil
 }
+
+// /////////////////////////////////////////////////
 func (r *RedisRepo) Update(ctx context.Context, order model.Order) error {
 	data, err := json.Marshal(order)
 	if err != nil {
@@ -109,6 +112,43 @@ type FindAllPage struct {
 	Offset uint
 }
 
-func (r *RedisRepo) FindAll(ctx context.Context) ([]model.Order, error) {
-	retunrn nil, nil
+type FindResult struct {
+	Orders []model.Order
+	Cursor uint64
+}
+
+func (r *RedisRepo) FindAll(ctx context.Context, page FindAllPage) (FindResult, error) {
+	res := r.Client.SScan(ctx, "orders", uint64(page.Offset), "*", int64(page.Size))
+
+	keys, cursor, err := res.Result()
+	if err != nil {
+		return FindResult{}, fmt.Errorf("failed to get order ids: %w", err)
+	}
+
+	if len(keys) == 0 {
+		return FindResult{
+			Orders: []model.Order{},
+		}, nil
+	}
+	xs, err := r.Client.MGet(ctx, keys...).Result()
+	if err != nil {
+		return FindResult{}, fmt.Errorf("failed to get orders:%w", err)
+	}
+	orders := make([]model.Order, len(xs))
+
+	for i, x := range xs {
+		x := x.(string)
+		var order model.Order
+
+		err := json.Unmarshal([]byte(x), &order)
+		if err != nil {
+			return FindResult{}, fmt.Errorf("failed to decode order json: %m", err)
+		}
+		orders[i] = order
+	}
+
+	return FindResult{
+		Orders: orders,
+		Cursor: cursor,
+	}, nil
 }
