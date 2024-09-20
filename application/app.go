@@ -33,10 +33,13 @@ func (a *App) Start(ctx context.Context) error {
 	}
 	fmt.Println("Starting server")
 
-	err = server.ListenAndServe()
-	if err != nil {
-		return fmt.Errorf("failed to start server: %w")
-	}
+	ch := make(chan error, 1)
 
+	go func() {
+		err = server.ListenAndServe()
+		if err != nil {
+			return fmt.Errorf("failed to start server: %w", err)
+		}
+	}()
 	return nil
 }
